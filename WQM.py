@@ -14,11 +14,9 @@ from icecream import ic
 
 # from PyQt5.QtCore import QTimer
 
-global CONNECTED, current_turbidity, current_ph_value, current_hardness_value
-CONNECTED = False
+global current_turbidity, current_ph_value, current_hardness_value
 r = random.randrange(1, 10000000)
-device_id = '1r2v9r5g84g'  # get it on the device sticker on purchase
-update_rate = 2000  # in msec
+update_rate = 5000  # in msec
 
 
 # Creating Client name - should be unique
@@ -47,10 +45,15 @@ class Mqtt_client():
         self.publishTopic = ''
         self.publishMessage = ''
         self.on_connected_to_form = ''
+        self.on_disconnected_to_form = ''
+        self.CONNECTED = False
 
     # Setters and getters
     def set_on_connected_to_form(self, on_connected_to_form):
         self.on_connected_to_form = on_connected_to_form
+
+    def set_on_disconnected_to_form(self, on_disconnected_to_form):
+        self.on_disconnected_to_form = on_disconnected_to_form
 
     def get_broker(self):
         return self.broker
@@ -104,16 +107,16 @@ class Mqtt_client():
         print("log: " + buf)
 
     def on_connect(self, client, userdata, flags, rc):
-        global CONNECTED
         if rc == 0:
             print("connected OK")
-            CONNECTED = True
-            self.on_connected_to_form();
+            self.CONNECTED = True
+            self.on_connected_to_form()
         else:
             print("Bad connection Returned code=", rc)
 
     def on_disconnect(self, client, userdata, flags, rc=0):
-        CONNECTED = False
+        self.CONNECTED = False
+        self.on_disconnected_to_form()
         print("DisConnected result code " + str(rc))
 
     def on_message(self, client, userdata, msg):
@@ -136,6 +139,9 @@ class Mqtt_client():
     def disconnect_from(self):
         self.client.disconnect()
 
+    def is_connected(self):
+        return self.CONNECTED
+
     def start_listening(self):
         self.client.loop_start()
 
@@ -143,13 +149,13 @@ class Mqtt_client():
         self.client.loop_stop()
 
     def subscribe_to(self, topic):
-        if CONNECTED:
+        if self.CONNECTED:
             self.client.subscribe(topic)
         else:
             print("Can't subscribe. Connection should be established first")
 
     def publish_to(self, topic, message):
-        if CONNECTED:
+        if self.CONNECTED:
             self.client.publish(topic, message)
         else:
             print("Can't publish. Connection should be established first")
@@ -163,6 +169,7 @@ class ConnectionDock(QDockWidget):
 
         self.mc = mc
         self.mc.set_on_connected_to_form(self.on_connected)
+        self.mc.set_on_disconnected_to_form(self.on_disconnected)
         self.eHostInput = QLineEdit()
         self.eHostInput.setInputMask('999.999.999.999')
         self.eHostInput.setText(broker_ip)
@@ -191,10 +198,10 @@ class ConnectionDock(QDockWidget):
         self.eCleanSession = QCheckBox()
         self.eCleanSession.setChecked(True)
 
-        self.eConnectbtn = QPushButton("Enable/Connect", self)
-        self.eConnectbtn.setToolTip("click me to connect")
-        self.eConnectbtn.clicked.connect(self.on_button_connect_click)
-        self.eConnectbtn.setStyleSheet("background-color: gray")
+        self.eConnectBtn = QPushButton("Enable/Connect", self)
+        self.eConnectBtn.setToolTip("click me to dis/connect")
+        self.eConnectBtn.clicked.connect(self.on_button_connect_click)
+        self.eConnectBtn.setStyleSheet("background-color: gray")
 
         self.Ph = QLineEdit()
         self.Ph.setText('')
@@ -206,7 +213,7 @@ class ConnectionDock(QDockWidget):
         self.Hardness.setText('')
 
         formLayot = QFormLayout()
-        formLayot.addRow("Turn On/Off", self.eConnectbtn)
+        formLayot.addRow("Turn On/Off", self.eConnectBtn)
         formLayot.addRow("Device Id", self.eDeviceID)
         formLayot.addRow("pH", self.Ph)
         formLayot.addRow("Turbidity(NTU)", self.Turbidity)
@@ -219,18 +226,27 @@ class ConnectionDock(QDockWidget):
         self.setWindowTitle("Connect")
 
     def on_connected(self):
-        self.eConnectbtn.setStyleSheet("background-color: green")
+        self.eConnectBtn.setStyleSheet("background-color: green")
+
+    def on_disconnected(self):
+        self.eConnectBtn.setStyleSheet("background-color: red")
 
     def on_button_connect_click(self):
-        self.mc.set_broker(self.eHostInput.text())
-        self.mc.set_port(int(self.ePort.text()))
-        clientname = generate_client_id(self.eDeviceID.text())
-        print('client name is ' + clientname)
-        self.mc.set_clientName(clientname)
-        self.mc.set_username(self.eUserName.text())
-        self.mc.set_password(self.ePassword.text())
-        self.mc.connect_to()
-        self.mc.start_listening()
+        if self.mc.is_connected():
+            print('disconnecting...')
+            self.mc.stop_listening()
+            self.mc.disconnect_from()
+        else:
+            print('connecting...')
+            self.mc.set_broker(self.eHostInput.text())
+            self.mc.set_port(int(self.ePort.text()))
+            clientname = generate_client_id(self.eDeviceID.text())
+            print('client name is ' + clientname)
+            self.mc.set_clientName(clientname)
+            self.mc.set_username(self.eUserName.text())
+            self.mc.set_password(self.ePassword.text())
+            self.mc.connect_to()
+            self.mc.start_listening()
 
 
 class MainWindow(QMainWindow):
@@ -258,6 +274,10 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.TopDockWidgetArea, self.connectionDock)
 
     def update_data(self):
+        if not self.mc.is_connected():
+            print('not connected, dont send data')
+            return
+
         ph_level = base_ph_value + random.randrange(0, 30) / 30  # 0->1
         turbidity_level = base_turbidity + random.randrange(0, 30) / 60  # 0->0.5
         hardness_level = base_hardness_value + random.randrange(0, 10)
