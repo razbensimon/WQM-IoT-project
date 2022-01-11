@@ -28,6 +28,10 @@ def generate_topic(device_id):
     return topic_prefix + '/' + device_id + '/sts'
 
 
+def generate_alarm_topic(device_id, sensor):
+    return generate_topic(device_id) + '/alarm/' + sensor
+
+
 def display_number(num):
     return format(num, '.2f')
 
@@ -278,16 +282,17 @@ class MainWindow(QMainWindow):
             print('not connected, dont send data')
             return
 
-        ph_level = base_ph_value + random.randrange(0, 30) / 30  # 0->1
-        turbidity_level = base_turbidity + random.randrange(0, 30) / 60  # 0->0.5
-        hardness_level = base_hardness_value + random.randrange(0, 10)
+        ph_level = display_number(base_ph_value + random.randrange(0, 30) / 30)  # 0->1
+        turbidity_level = display_number(base_turbidity + random.randrange(0, 30) / 60)  # 0->0.5
+        hardness_level = display_number(base_hardness_value + random.randrange(0, 10))
 
         # re-render UI
-        self.connectionDock.Ph.setText(str(display_number(ph_level)))
-        self.connectionDock.Turbidity.setText(str(display_number(turbidity_level)))
-        self.connectionDock.Hardness.setText(str(display_number(hardness_level)))
+        self.connectionDock.Ph.setText(ph_level)
+        self.connectionDock.Turbidity.setText(turbidity_level)
+        self.connectionDock.Hardness.setText(hardness_level)
 
-        message = {"turbidity": turbidity_level, "hardness": hardness_level, "ph": ph_level,
+        message = {"turbidity": float(turbidity_level), "hardness": float(hardness_level),
+                   "ph": float(ph_level),
                    "time": datetime.now().isoformat()}
 
         self.send_data(message)
@@ -301,7 +306,6 @@ class MainWindow(QMainWindow):
         self.mc.publish_to(topic, msg_json)
 
     def send_alarms_if_needed(self, message):
-        alarm_topic = generate_topic(self.connectionDock.eDeviceID.text()) + '/alarm'
         validation_func_map = {"turbidity": self.should_alarm_turbidity, "hardness": self.should_alarm_hardness,
                                "ph": self.should_alarm_ph}
         for key, value in message.items():
@@ -309,6 +313,7 @@ class MainWindow(QMainWindow):
                 continue
             should_alarm = validation_func_map.get(key)
             if should_alarm(value):
+                alarm_topic = generate_alarm_topic(self.connectionDock.eDeviceID.text(), key)
                 message = {"sensor": key, "alarmed_value": value, "time": datetime.now().isoformat()}
                 msg_json = json.dumps(message)
                 ic('ALARM 🚨', alarm_topic, message)

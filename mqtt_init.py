@@ -36,7 +36,7 @@ turbidity_max = 1.0  # in NTU unit (Total Suspended Solids - TSS)
 # 2. pH safe range
 ph_value_max = 9.5
 ph_value_min = 6.5
-base_ph_value = 4.5
+base_ph_value = 4.5  # should be 7
 
 # 3. Water hardness
 base_hardness_value = 110  # in milligram per litter (of CaCO3)
