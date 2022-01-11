@@ -65,7 +65,7 @@ def main():
     client = client_init(cname)
     # main monitoring loop
     client.loop_start()  # Start loop
-    client.subscribe(comm_topic+'5976397/sts')
+    client.subscribe(topic_prefix + '5976397/sts')
     try:
         while conn_time==0:           
             time.sleep(conn_time+manag_time)
