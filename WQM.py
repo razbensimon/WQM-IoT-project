@@ -262,17 +262,46 @@ class MainWindow(QMainWindow):
         turbidity_level = base_turbidity + random.randrange(0, 30) / 60  # 0->0.5
         hardness_level = base_hardness_value + random.randrange(0, 10)
 
-        # rerender UI
+        # re-render UI
         self.connectionDock.Ph.setText(str(display_number(ph_level)))
         self.connectionDock.Turbidity.setText(str(display_number(turbidity_level)))
         self.connectionDock.Hardness.setText(str(display_number(hardness_level)))
 
+        message = {"turbidity": turbidity_level, "hardness": hardness_level, "ph": ph_level,
+                   "time": datetime.now().isoformat()}
+
+        self.send_data(message)
+        self.send_alarms_if_needed(message)
+
+    def send_data(self, message):
         # publish JSON with sensors data
-        message = {"turbidity": turbidity_level, "hardness": hardness_level, "ph": ph_level, "time": datetime.now().isoformat()}
         msg_json = json.dumps(message)
         topic = generate_topic(self.connectionDock.eDeviceID.text())
         ic(topic, message)
         self.mc.publish_to(topic, msg_json)
+
+    def send_alarms_if_needed(self, message):
+        alarm_topic = generate_topic(self.connectionDock.eDeviceID.text()) + '/alarm'
+        validation_func_map = {"turbidity": self.should_alarm_turbidity, "hardness": self.should_alarm_hardness,
+                               "ph": self.should_alarm_ph}
+        for key, value in message.items():
+            if key == 'time':
+                continue
+            should_alarm = validation_func_map.get(key)
+            if should_alarm(value):
+                message = {"sensor": key, "alarmed_value": value, "time": datetime.now().isoformat()}
+                msg_json = json.dumps(message)
+                ic('ALARM 🚨', alarm_topic, message)
+                self.mc.publish_to(alarm_topic, msg_json)
+
+    def should_alarm_turbidity(self, value):
+        return value > turbidity_max
+
+    def should_alarm_ph(self, value):
+        return value > ph_value_max or value < ph_value_min
+
+    def should_alarm_hardness(self, value):
+        return value > hardness_max
 
 
 app = QApplication(sys.argv)
